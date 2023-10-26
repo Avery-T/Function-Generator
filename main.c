@@ -22,7 +22,7 @@
 #include <stdbool.h>
 void keypad_init(void);
 
-uint32_t keypad_poll(void);
+uint32_t get_key_from_keypad(void);
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
@@ -30,131 +30,61 @@ void Internal_clock_Intit();
 void DAC_init();
 void DAC_write();
 void Timer2_Init();
-
 void change_function_gens_output(uint32_t key);
+//CONSTS for keypad config  
+const int COL_OFFSET = 4;
+const int ROW_OFFSET = 0;
+const int16_t NUM_ROWS = 4;
+const uint16_t NUM_COLS = 4;
+const uint16_t NUM_OF_SAMPLES = 600;
 
-
-int COL_OFFSET = 4;
-uint16_t NUM_ROWS = 4;
-uint16_t NUM_COLS = 4;
 uint32_t val = 0;
 
-uint16_t keys[4][4] = {
+const uint16_t keys[4][4] = {
     {1, 2, 3, 10},
     {4, 5, 6, 11},
     {7, 8, 9, 12},
     {14, 0, 15, 13}
 };
 
- int ROW_OFFSET = 0;
 
- volatile int table_index = 0;
- volatile int sine = 0;
- volatile int sawtooth = 0;
- volatile int square = 1;
- volatile int triangle =0;
- volatile int square_wave_duty = 5;
- volatile int frequency_set = 1; //base is a 100hz
- volatile int freq_cnt = 0;
-
-
-
- //volatile int freq_index = 0;
-
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
-
-/* USER CODE END Includes */
-
-/* Private typedef -----------------------------------------------------------*/
-/* USER CODE BEGIN PTD */
-
-/* USER CODE END PTD */
-
-/* Private define ------------------------------------------------------------*/
-/* USER CODE BEGIN PD */
-
-/* USER CODE END PD */
-
-/* Private macro -------------------------------------------------------------*/
-/* USER CODE BEGIN PM */
-
-/* USER CODE END PM */
-
-/* Private variables ---------------------------------------------------------*/
-UART_HandleTypeDef huart2;
-
-/* USER CODE BEGIN PV */
-
-/* USER CODE END PV */
-
-/* Private function prototypes -----------------------------------------------*/
-
-
-/* USER CODE BEGIN PFP */
-
-/* USER CODE END PFP */
-
-/* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */
-
-/* USER CODE END 0 */
-
-/**
-  * @brief  The application entry point.
-  * @retval int
-  */
+// FLAGS 
+ volatile int sawtooth = 0, sine = 0, square = 1,triangle =0;
+ volatile int table_index = 0, square_wave_duty = 5, 
+		 	   frequency_set = 1, freq_cnt = 0;
+//
+ 
+//UART_HandleTypeDef huart2;
 int main(void)
 {
-
-  /* USER CODE BEGIN 1 */
-
-  /* USER CODE END 1 */
-
-  /* MCU Configuration--------------------------------------------------------*/
-
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-
-
   HAL_Init();
   SystemClock_Config();
-   Internal_clock_Intit();
-   DAC_init();
-   Timer2_Init();
-   keypad_init();
-
+  Internal_clock_Intit();
+  DAC_init();
+  Timer2_Init();
+  keypad_init();
+   
   uint32_t key = -1;
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
+  
   while(1)
   {
-	  key = keypad_poll();
-
+	  key = get_key_from_keypad(); 
 	  change_function_gens_output(key);
-	  key = -1;
-
-
+	  key = -1; //resets the prev key
   }
-
-  /* USER CODE END 3 */
 }
 
 void TIM2_IRQHandler(void)
 {
 	  TIM2->SR &= ~TIM_DIER_UIE;
-	  if(table_index  >= 599)
-	  {
+	  if(table_index >= NUM_OF_SAMPLES){
 		table_index=0;
 	  }
-
 	  table_index += frequency_set;
       DAC_write();
-
 }
 void DAC_write()
 {
-
-
 	 while(!(SPI1->SR & SPI_SR_TXE));		// ensure room in TXFIFO before writing
 
 	 if(sine){
@@ -167,13 +97,12 @@ void DAC_write()
 	  }
 	 if(triangle){
 		 SPI1->DR = (0x3000 | TRIANGLE_WAVE[table_index]);
-				 return;
+		 return;
 	 }
-
 	SPI1->DR = (0x3000 | SQUARE_WAVE[square_wave_duty][table_index]);
 }
 
-uint32_t keypad_poll(void)
+uint32_t get_key_from_keypad(void)
 {
 	uint32_t key = -1;
     bool row_match = false;
@@ -206,51 +135,39 @@ void keypad_init(void)
 void change_function_gens_output(uint32_t key)
  {
  	HAL_Delay(100); //debouncer
-	//table_index =0;
-	//TIM2->CNT =0;
-
- 	//GPIOC->ODR |= keypad[column - 1][row-1] << 8;
- 	///sine = 0; triangle = 0; sawtooth =0; square =0;
-	if(key == -1)
-		return;
+ 	if(key==-1) return; //if its not a valid key dont change anyof the flags
  	sine = 0; sawtooth =0; triangle =0; square =0;
-
- 	if(key == 1 )
- 		frequency_set =1 ;
-
- 	if(key == 2)
- 		frequency_set = 2;
- 	if(key  == 3)
- 		frequency_set = 3;
- 	 if(key == 4){
- 		frequency_set = 4;
- 	 };
- 	 if(key == 5){
- 		frequency_set = 5;
- 	 };
-
- 	if(key == 7)
- 	    triangle = 1;
-
- 	if(key == 8)
- 	 	sawtooth = 1;
- 	if(key  == 9)
- 		square = 1;
-
- 	if(key == 15 && square_wave_duty !=8){
- 		square_wave_duty++;
- 	};
-
-    if( key == 14 && square_wave_duty != 0){
-    	square_wave_duty--;
-    }
- 	return;
- }
-
-/**
-  * @brief System Clock Configuration
-  * @retval None
-  */
+ 	switch(key){
+ 		case 1:
+		frequency_set =1;
+ 		case 1:
+ 				frequency_set =1;
+ 		case 2:
+ 				frequency_set = 2;
+ 		case 3:
+ 				frequency_set = 3;
+ 		case 4:
+ 				frequency_set = 4;
+ 		case 5:
+ 				frequency_set = 5;
+ 		case 6:
+ 				frequency_set = 1;
+ 		case 7:
+ 				frequency_set = 1;
+ 		case 8:
+ 				frequency_set = 1;
+ 		case 9:
+ 				frequency_set = 1;
+ 		case 14:
+ 				if( key == 14 && square_wave_duty != 0)
+ 					square_wave_duty--;		
+ 		case 15:
+ 			 	if(square_wave_duty !=8)
+ 			 		square_wave_duty++;
+ 		default: return;
+ 	}
+ 	
+ }  	
 
 void DAC_init()
 {
@@ -288,7 +205,6 @@ void DAC_init()
 		   SPI1->CR2 = (SPI_CR2_SSOE |				// enable CS output
 		 		  	   SPI_CR2_NSSP |				// create CS pulse
 		 			   (0xF << SPI_CR2_DS_Pos));	// 16-bit data frames
-		   //SPI1->CR1 |= SPI_CR1_CPOL;
 		   SPI1->CR1 |= (SPI_CR1_SPE);				// enable SPI
 
 }
@@ -310,22 +226,13 @@ void Internal_clock_Intit()
 
 void Timer2_Init()
 {
-
     // Enable the peripheral clock for TIM2
 	RCC->AHB2ENR  |= RCC_AHB2ENR_GPIOCEN;
     RCC->APB1ENR1 |= RCC_APB1ENR1_TIM2EN;
     // Configure the GPIO pin for PWM output (change these values for your specific pin)
-
     // Configure TIM2 as PWM mode
-    //clock / (num samples / wanted frequency) = ARR32000000 uint32_t) (36000000) / (600*500);
-    //TIM2->ARR =  398;
-    //TIM2->ARR = (3600000/500*600);
-    TIM2->ARR =  320000/600;
-    //(3200000/600)
-    //TIM2->ARR = (400000/600);
-    //TIM2->ARR = (15);
+    TIM2->ARR =  320000/600;  //32 megahurtz/600 samples
     TIM2->DIER |= TIM_DIER_UIE; //flag for arr overflow inturupt
-    //TIM2->DIER |= TIM_DIER_CC1IE; //intrupt enable othher thing is intrupt flag
     NVIC_SetPriority(TIM2_IRQn, 0); // Set priority (adjust as needed)
     NVIC_EnableIRQ(TIM2_IRQn); // Enable the interrupt    // Set the PWM period (ARR register)
     // Set the initial PWM duty cycle (CCR1 register)
